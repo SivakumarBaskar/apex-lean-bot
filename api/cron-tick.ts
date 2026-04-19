@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
@@ -6,8 +7,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const C: Record<string, string> = {
   groq: process.env.GROQ_API_KEY || "",
-  cohere: process.env.COHERE_API_KEY || "",
-  hf: process.env.HF_API_KEY || "",
   xKey: process.env.X_API_KEY || "",
   xSecret: process.env.X_API_SECRET || "",
   xAccess: process.env.X_ACCESS_TOKEN || "",
@@ -44,7 +43,6 @@ async function tgSend(msg: string): Promise<void> {
 }
 
 function oauthSign(method: string, url: string): string {
-  const crypto = await import('crypto');
   const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
   const ts = Math.floor(Date.now() / 1000).toString();
   const params: Record<string, string> = { oauth_consumer_key: C.xKey, oauth_nonce: nonce, oauth_signature_method: "HMAC-SHA1", oauth_timestamp: ts, oauth_token: C.xAccess, oauth_version: "1.0" };
@@ -104,7 +102,8 @@ async function genAI(signal: any, style: string): Promise<string> {
   if (C.grok) {
     try {
       const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST", headers: {"Content-Type": "application/json", "Authorization": "Bearer " + C.grok}, body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{role: "user", content: prompt}], max_tokens: 100 }) });
-      const d = await r.json() as any; if (d.choices) return d.choices[0].message.content.replace(/"/g, "").slice(0, 280);
+      const d = await r.json() as any; 
+      if (d.choices) return d.choices[0].message.content.replace(/"/g, "").slice(0, 280);
     } catch(e) {}
   }
   const arrow = signal.dir === "BUY" ? "▲" : "▼";
@@ -112,7 +111,7 @@ async function genAI(signal: any, style: string): Promise<string> {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== "POST") return new Response(JSON.stringify({ error: "Use POST" }), { status: 405 });
+  if (req.method === "GET") return new Response(JSON.stringify({ status: "Apex Lean Bot is running. Use POST." }), { status: 200, headers: {"Content-Type": "application/json"} });
   
   try {
     const { data: stateRow } = await supabase.from("bot_state").select("value").eq("key", "lastSigTs").single();
@@ -120,7 +119,8 @@ export default async function handler(req: Request): Promise<Response> {
     const coolMs = parseInt(C.cooldown) * 3600000;
     
     if (lastTs && Date.now() - lastTs < coolMs) {
-      return new Response(JSON.stringify({ status: "cooldown" }), { status: 200 });
+      await tgSend("⏳ Scanner tick: Cooldown active.");
+      return new Response(JSON.stringify({ status: "cooldown" }), { status: 200, headers: {"Content-Type": "application/json"} });
     }
 
     for (let i = 0; i < 10; i++) {
@@ -139,13 +139,15 @@ export default async function handler(req: Request): Promise<Response> {
           await supabase.from("signals").update({ posted: true }).eq("symbol", sig.sym).order("created_at", { ascending: false }).limit(1).single();
           await supabase.from("logs").insert({ type: "POST", message: sig.dir + " " + sig.sym, details: content, success: true });
           await tgSend("✅ <b>Posted</b>\n" + sig.dir + " " + sig.sym + " [" + sig.grade + "]\n" + content);
-          return new Response(JSON.stringify({ status: "posted", symbol: sig.sym }), { status: 200 });
+          return new Response(JSON.stringify({ status: "posted", symbol: sig.sym }), { status: 200, headers: {"Content-Type": "application/json"} });
         }
       }
     }
-    return new Response(JSON.stringify({ status: "no_signal" }), { status: 200 });
+    await tgSend("🔍 Scanner tick: No A+ signal found this cycle.");
+    return new Response(JSON.stringify({ status: "no_signal" }), { status: 200, headers: {"Content-Type": "application/json"} });
   } catch (e: any) {
-    await supabase.from("logs").insert({ type: "ERROR", message: "Tick failed", details: e.message, success: false });
-    return new Response(JSON.stringify({ error: e.message }), { status: 500 });
+    await supabase.from("logs").insert({ type: "ERROR", message: "Tick failed", details: e.message, success: false }).catch(()=>{});
+    await tgSend("❌ Bot Error: " + e.message).catch(()=>{});
+    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: {"Content-Type": "application/json"} });
   }
 }
