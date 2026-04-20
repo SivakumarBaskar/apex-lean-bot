@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const C = { 
-  grok: process.env.GROK_API_KEY || "", xKey: process.env.X_API_KEY || "", xSecret: process.env.X_API_SECRET || "", 
+  grok: process.env.GROQ_API_KEY || "", xKey: process.env.X_API_KEY || "", xSecret: process.env.X_API_SECRET || "", 
   xAccess: process.env.X_ACCESS_TOKEN || "", xAccessSecret: process.env.X_ACCESS_TOKEN_SECRET || "", 
   tgToken: process.env.TELEGRAM_BOT_TOKEN || "", tgChat: process.env.TELEGRAM_CHAT_ID || "",
   moonBtc: process.env.MOONPAY_BTC || "", moonSol: process.env.MOONPAY_SOL || ""
@@ -35,7 +35,6 @@ export default async function handler(req) {
   if (!tweetId) return new Response(JSON.stringify({ error: "Missing url" }), { status: 400 });
 
   try {
-    // 1. Get Tweet and Author Info
     const apiUrl = "https://api.twitter.com/2/tweets/" + tweetId + "?tweet.fields=text,author_id&expansions=author_id&user.fields=username,name,description";
     const data = await xApi("GET", apiUrl);
     if (!data.data || !data.includes || !data.includes.users) return new Response(JSON.stringify({ error: "Cannot read tweet" }), { status: 400 });
@@ -45,7 +44,6 @@ export default async function handler(req) {
     const username = author.username.toLowerCase();
     const tweetText = tweet.text;
 
-    // 2. Figure out what payload to attach at the end
     let payload = "";
     let isGiveaway = false;
 
@@ -61,15 +59,12 @@ export default async function handler(req) {
       isGiveaway = true;
     }
 
-    // 3. Generate the AI Comment (Contextual for EVERYONE)
     let aiComment = "";
     let prompt = "";
 
     if (isGiveaway) {
-      // Tell AI to write a natural comment reacting to the specific giveaway, but NOT to include the ID/Wallet
       prompt = "You are an excited trader entering a giveaway from @" + username + ". Read their exact tweet. Write a very short, natural 1-sentence comment reacting to what they are giving away or the rules they mentioned. Do NOT include any ID or wallet address in your response. Max 40 words.";
     } else {
-      // Standard smart reply for big traders/prop firms
       prompt = "You are elite trader @SivakumarBMS. Read @" + username + " tweet. Write a VERY SHORT, human-sounding reply (max 40 words). Agree or add a quick Price Action insight. No hashtags.";
     }
 
@@ -81,20 +76,17 @@ export default async function handler(req) {
       } catch(e) {}
     }
     
-    // Fallback if AI fails
     if (!aiComment) {
       aiComment = isGiveaway ? "Awesome giveaway, thanks for doing this! 🔥" : "This. 👆";
     }
 
-    // 4. Combine: AI Comment + Payload (Guarantees correct formatting)
     const finalText = isGiveaway ? (aiComment + "\n\n" + payload) : aiComment;
 
-    // 5. Post the Reply
     const bodyStr = JSON.stringify({ text: finalText, reply: { in_reply_to_tweet_id: tweetId } });
     const postRes = await fetch("https://api.twitter.com/2/tweets", { method: "POST", headers: { Authorization: oauthSign("POST", "https://api.twitter.com/2/tweets", bodyStr), "Content-Type": "application/json" }, body: bodyStr });
 
     if (postRes.ok) {
-      await tgSend("🚀 <b>Replied to @" + username + "</b>\n" + finalText);
+      await tgSend("🚀 <b>Sniped @" + username + "</b>\n" + finalText);
       return new Response(JSON.stringify({ status: "replied", target: username }), { status: 200 });
     } else {
       const err = await postRes.text();
