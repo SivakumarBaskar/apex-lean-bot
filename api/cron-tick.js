@@ -74,10 +74,7 @@ export default async function handler(req) {
     const fallbackCoolMs = 2 * 3600000; // 2 hour cooldown for non-signals
 
     // If both are in cooldown, do nothing
-    if ((lastTs && Date.now() - lastTs < coolMs) && (lastFallback && Date.now() - lastFallback < fallbackCoolMs)) {
-      return new Response(JSON.stringify({ status: "cooldown" }), { status: 200, headers: {"Content-Type": "application/json"} });
-    }
-
+    
     // Try to find an A+ Signal
     for (let i = 0; i < 10; i++) {
       const sig = await scanOnce();
@@ -95,7 +92,6 @@ export default async function handler(req) {
           await supabase.from("signals").update({ posted: true }).eq("symbol", sig.sym).order("created_at", { ascending: false }).limit(1).single();
           await supabase.from("logs").insert({ type: "SIGNAL", message: sig.dir + " " + sig.sym, details: content, success: true });
           await tgSend("✅ <b>Signal Posted</b>\n" + sig.dir + " " + sig.sym + " [" + sig.grade + "]\n" + content);
-          return new Response(JSON.stringify({ status: "posted", type: "signal" }), { status: 200, headers: {"Content-Type": "application/json"} });
         }
       }
     }
@@ -116,8 +112,6 @@ export default async function handler(req) {
 
     return new Response(JSON.stringify({ status: "no_signal" }), { status: 200, headers: {"Content-Type": "application/json"} });
   } catch (e) {
-    const msg = e && e.message ? e.message : "Unknown error";
-    await tgSend("❌ Bot Error: " + msg).catch(()=>{});
     return new Response(JSON.stringify({ error: msg }), { status: 500, headers: {"Content-Type": "application/json"} });
   }
 }
