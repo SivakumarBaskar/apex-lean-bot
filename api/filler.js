@@ -1,0 +1,1 @@
+async function xPost(text) { if (!C.xKey) return false; try { const b = JSON.stringify({ text }); const res = await fetch("https://api.twitter.com/2/tweets", { method: "POST", headers: { Authorization: oauthSign("POST", "https://api.twitter.com/2/tweets", b), "Content-Type": "application/json" }, body: b }); return res.ok; } catch(e) { return false; } }
